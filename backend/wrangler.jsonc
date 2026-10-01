@@ -9,13 +9,13 @@
   "alias": {
     "iconv-lite": "./src/lib/iconv-shim.ts"
   },
-  "routes": [
-    { "pattern": "api.yourdomain.com", "custom_domain": true }
-  ],
+  "workers_dev": true,
+  "preview_urls": false,
+  
   "vars": {
     "NODE_ENV": "production",
     "PORT": "4000",
-    "CORS_ORIGIN": "https://app.yourdomain.com",
+    "CORS_ORIGIN": "https://aquavision.mohitbhutada.com",
     "SUPABASE_URL": "https://qrzvsjgwcqhrpqhvduxf.supabase.co",
     "ML_SERVICE_URL": "https://your-ml-service-url",
     "OTP_EXPIRY_SECONDS": "600",

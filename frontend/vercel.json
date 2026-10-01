@@ -1,3 +1,17 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "has": [{ "type": "host", "value": "https://aqua-vision-taupe.vercel.app" }],
+      "destination": "https://aquavision.mohitbhutada.com/$1",
+      "permanent": true
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://aquavision-backend-worker.aquavisionai01.workers.dev/api/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

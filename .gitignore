@@ -6,7 +6,6 @@
 .dev.vars.*
 
 # Dependencies
-# =========================
 node_modules/
 
 # Build output
