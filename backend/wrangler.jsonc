@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aquavision-backend-worker",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-09-30",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "alias": {
+    "iconv-lite": "./src/lib/iconv-shim.ts"
+  },
+  "routes": [
+    { "pattern": "api.yourdomain.com", "custom_domain": true }
+  ],
+  "vars": {
+    "NODE_ENV": "production",
+    "PORT": "4000",
+    "CORS_ORIGIN": "https://app.yourdomain.com",
+    "SUPABASE_URL": "https://qrzvsjgwcqhrpqhvduxf.supabase.co",
+    "ML_SERVICE_URL": "https://your-ml-service-url",
+    "OTP_EXPIRY_SECONDS": "600",
+    "OTP_MAX_ATTEMPTS": "5",
+    "OTP_RESEND_COOLDOWN_SECONDS": "60",
+    "OTP_LOCKOUT_SECONDS": "3600",
+    "FORGOT_PASSWORD_DAILY_LIMIT": "1"
+  }
+}

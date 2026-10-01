@@ -1,0 +1,58 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+
+# Dependencies
+# =========================
+node_modules/
+
+# Build output
+dist/
+build/
+.cache/
+*.tsbuildinfo
+
+# Cloudflare / Vercel / Supabase local state
+.wrangler/
+.vercel/
+supabase/.temp/
+supabase/.branches/
+
+# Python (frontend/scripts/make-previews.py)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs / temporary files
+*.log
+logs/
+tmp/
+temp/
+
+# Test / coverage
+coverage/
+htmlcov/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local AI tooling (keeps the folders you deleted from coming back)
+.agents/
+.gsd/
+AGENTS.md
+.gemini/
+.antigravity/

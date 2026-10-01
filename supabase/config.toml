@@ -1,0 +1,32 @@
+# AquaVision Supabase Local & Migration Configuration Baseline
+project_id = "aquavision"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "auth"]
+
+[db]
+port = 54322
+
+[storage]
+enabled = true
+file_size_limit = "15MB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600 # 1 Hour Access Token Expiry
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+redirect_uri = "http://localhost:54321/auth/v1/callback"
