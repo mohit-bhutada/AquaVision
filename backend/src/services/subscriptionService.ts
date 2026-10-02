@@ -25,6 +25,7 @@ export interface SubscriptionRequestRecord {
 export interface UserSubscriptionDetails {
   currentPlan: PlanRecord;
   subscriptionStatus: string;
+  period: { startsAt: string; endsAt: string } | null;
   credits: UserCreditState;
   pendingRequest: SubscriptionRequestRecord | null;
 }
@@ -47,6 +48,35 @@ export async function getPlans(): Promise<PlanRecord[]> {
   return data as PlanRecord[];
 }
 
+export interface GrantForPlanLookup {
+  status: string;
+  period_start: string;
+  expires_at: string;
+  purchased_at: string;
+  plan: PlanRecord | null;
+}
+
+/**
+ * Decides which paid plan the user is "on". Newest purchase wins when several grants are active
+ * (e.g. PRO bought first, PREMIUM bought later => PREMIUM). If nothing is active any more, the most
+ * recent purchase is returned as EXPIRED so the UI can say so. Dates are compared directly, because a
+ * grant's stored status is only refreshed when credits are read.
+ */
+export function pickCurrentGrant(
+  grants: GrantForPlanLookup[],
+  now: number = Date.now()
+): { grant: GrantForPlanLookup; status: 'ACTIVE' | 'EXPIRED' } | null {
+  const newestFirst = [...grants]
+    .filter((g) => g.plan)
+    .sort((a, b) => new Date(b.purchased_at).getTime() - new Date(a.purchased_at).getTime());
+  const active = newestFirst.find(
+    (g) => (g.status === 'ACTIVE' || g.status === 'EXHAUSTED') && new Date(g.expires_at).getTime() > now
+  );
+  if (active) return { grant: active, status: 'ACTIVE' };
+  if (newestFirst.length > 0) return { grant: newestFirst[0], status: 'EXPIRED' };
+  return null;
+}
+
 export async function getUserSubscriptionDetails(userId: string): Promise<UserSubscriptionDetails> {
   const plans = await getPlans();
   const creditState = await getUserCreditState(userId);
@@ -57,8 +87,21 @@ export async function getUserSubscriptionDetails(userId: string): Promise<UserSu
     .eq('user_id', userId)
     .single();
 
-  const currentPlan = (sub?.plan as unknown as PlanRecord) || plans.find((p) => p.code === 'FREE') || plans[0];
-  const subscriptionStatus = sub?.status || 'ACTIVE';
+  const { data: grantRows } = await supabaseAdmin
+    .from('subscription_grants')
+    .select('status, period_start, expires_at, purchased_at, plan:plans(*)')
+    .eq('user_id', userId)
+    .order('purchased_at', { ascending: false })
+    .limit(10);
+
+  const picked = pickCurrentGrant((grantRows || []) as unknown as GrantForPlanLookup[]);
+  const freePlan = plans.find((p) => p.code === 'FREE') || plans[0];
+
+  const currentPlan = picked
+    ? (picked.grant.plan as PlanRecord)
+    : (sub?.plan as unknown as PlanRecord) || freePlan;
+  const subscriptionStatus = picked ? picked.status : sub?.status || 'ACTIVE';
+  const period = picked ? { startsAt: picked.grant.period_start, endsAt: picked.grant.expires_at } : null;
 
   // Check pending subscription request for today or latest pending
   const { data: pendingReq } = await supabaseAdmin
@@ -86,6 +129,7 @@ export async function getUserSubscriptionDetails(userId: string): Promise<UserSu
   return {
     currentPlan,
     subscriptionStatus,
+    period,
     credits: creditState,
     pendingRequest: formattedPending,
   };
@@ -111,8 +155,8 @@ export function formatSubscriptionState(subDetails: UserSubscriptionDetails) {
     current: {
       plan: (subDetails.currentPlan.code || 'FREE') as 'FREE' | 'PRO' | 'PREMIUM',
       status: (subDetails.subscriptionStatus || 'ACTIVE') as 'ACTIVE' | 'EXPIRED' | 'NONE',
-      startsAt: subDetails.currentPlan ? new Date().toISOString() : null,
-      endsAt: null,
+      startsAt: subDetails.period?.startsAt ?? null,
+      endsAt: subDetails.period?.endsAt ?? null,
     },
     pendingRequest: pending,
     lastDecision: null,
@@ -132,10 +176,18 @@ export async function createSubscriptionUpgradeRequest(
     throw new AppError('Invalid subscription upgrade target. Choose PRO or PREMIUM.', 400);
   }
 
-  const plans = await getPlans();
-  const targetPlan = plans.find((p) => p.code === upperCode);
-  if (!targetPlan) {
-    throw new AppError(`Plan '${upperCode}' not found in database.`, 404);
+  const { data: targetPlan, error: planErr } = await supabaseAdmin
+    .from('plans')
+    .select('id, code')
+    .eq('code', upperCode)
+    .maybeSingle();
+  if (planErr || !targetPlan) {
+    logger.error(
+      `Plan '${upperCode}' could not be loaded from the plans table: ${planErr?.message || 'no row found'}. Run the plan seed SQL.`,
+      undefined,
+      'SubscriptionService'
+    );
+    throw new AppError('Subscription plans are not set up yet. Please contact support.', 503);
   }
 
   const todayIso = new Date().toISOString().split('T')[0];
@@ -173,7 +225,7 @@ export async function createSubscriptionUpgradeRequest(
         409
       );
     }
-    logger.error(`Failed to create subscription request for user ${userId}: ${error?.message}`, undefined, 'SubscriptionService');
+    logger.error(`Failed to create subscription request for user ${userId}: [${error?.code}] ${error?.message}`, undefined, 'SubscriptionService');
     throw new AppError('Failed to record subscription upgrade request.', 500);
   }
 

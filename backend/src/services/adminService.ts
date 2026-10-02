@@ -301,7 +301,7 @@ export class AdminService {
     // Pending requests query
     const { data: pendingRequests } = await supabaseAdmin
       .from('subscription_requests')
-      .select('*, profiles(id, email, display_name), plans:requested_plan_id(code, name)')
+      .select('*, profiles!subscription_requests_user_id_fkey(id, email, display_name), plans:requested_plan_id(code, name)')
       .order('requested_at', { ascending: false });
 
     return {

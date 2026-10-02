@@ -208,7 +208,7 @@ router.get('/subscription-requests', async (req: AdminRequest, res: Response, ne
 
     let query = supabaseAdmin
       .from('subscription_requests')
-      .select('*, profiles(id, email, display_name), plans:requested_plan_id(code)');
+      .select('*, profiles!subscription_requests_user_id_fkey(id, email, display_name), plans:requested_plan_id(code)');
 
     if (status) {
       query = query.eq('status', status.toUpperCase());
@@ -245,7 +245,7 @@ router.post('/subscription-requests/:id/approve', async (req: AdminRequest, res:
     const requestId = req.params.id as string;
     const reqMeta = { ip: req.ip, userAgent: req.headers['user-agent'] };
 
-    const { data: reqData } = await supabaseAdmin.from('subscription_requests').select('*, plans:requested_plan_id(code), profiles(id, email, display_name)').eq('id', requestId).single();
+    const { data: reqData } = await supabaseAdmin.from('subscription_requests').select('*, plans:requested_plan_id(code), profiles!subscription_requests_user_id_fkey(id, email, display_name)').eq('id', requestId).single();
     if (!reqData) throw new AppError('Subscription request not found.', 404, 'NOT_FOUND');
     if (reqData.status !== 'PENDING') {
       throw new AppError(`Subscription request has already been ${reqData.status.toLowerCase()}.`, 409, 'REQUEST_ALREADY_DECIDED');
@@ -413,4 +413,3 @@ router.get('/health', handleHealthCheck);
 router.get('/system/health', handleHealthCheck);
 
 export default router;
-

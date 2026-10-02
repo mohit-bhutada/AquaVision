@@ -161,6 +161,13 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
       if (typeof e?.message === 'string') message = e.message;
       if (typeof e?.code === 'string') code = e.code;
       details = e?.details;
+      // The backend returns the OTP verification token at the top level of the error (not inside
+      // `details`) when an unverified account tries to log in. Surface it so the login screen can
+      // send the user to the OTP page.
+      const verificationToken = e?.verificationToken ?? body?.verificationToken;
+      if (!details && typeof verificationToken === 'string' && verificationToken) {
+        details = { verificationToken, requiresVerification: true };
+      }
     } catch {
       /* non-JSON error body */
     }

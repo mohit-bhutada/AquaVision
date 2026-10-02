@@ -1,9 +1,10 @@
 import { Router, Response, NextFunction } from 'express';
-import { requireAuth, AuthenticatedRequest } from '../middleware/auth.js';
+import { requireAuth, AuthenticatedRequest, revokeSession } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { createRateLimiter } from '../middleware/rateLimit.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { config } from '../config/env.js';
+import { getCookieOptions } from '../lib/cookies.js';
 import { logger } from '../lib/logger.js';
 import { checkLoginLock, recordFailedLogin, recordSuccessfulLogin } from '../middleware/loginLockout.js';
 import {
@@ -25,19 +26,12 @@ const authRateLimiter = createRateLimiter('auth-endpoints', {
 
 router.use(authRateLimiter);
 
-const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: config.env === 'production',
-  sameSite: (config.env === 'production' ? 'none' : 'lax') as 'none' | 'lax',
-  path: '/',
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-};
 
 
 export function formatUserResponse(profile: any, authUser?: any) {
   return {
     id: profile.id,
-    name: profile.display_name || null,
+    name: profile.display_name || (profile.email ? String(profile.email).split('@')[0] : null),
     email: profile.email,
     avatarUrl: profile.avatar_url || null,
     role: (profile.role || 'user').toUpperCase() as 'USER' | 'ADMIN',
@@ -174,9 +168,9 @@ router.post('/verify-otp', async (req: AuthenticatedRequest, res: Response, next
         });
 
         if (sessionData?.session) {
-          res.cookie('sb_access_token', sessionData.session.access_token, COOKIE_OPTIONS);
+          res.cookie('sb_access_token', sessionData.session.access_token, getCookieOptions());
           if (sessionData.session.refresh_token) {
-            res.cookie('sb_refresh_token', sessionData.session.refresh_token, COOKIE_OPTIONS);
+            res.cookie('sb_refresh_token', sessionData.session.refresh_token, getCookieOptions());
           }
           authUserObj = sessionData.user;
         }
@@ -292,9 +286,9 @@ router.post('/login', async (req: AuthenticatedRequest, res: Response, next: Nex
 
     recordSuccessfulLogin(normalizedEmail);
 
-    res.cookie('sb_access_token', data.session.access_token, COOKIE_OPTIONS);
+    res.cookie('sb_access_token', data.session.access_token, getCookieOptions());
     if (data.session.refresh_token) {
-      res.cookie('sb_refresh_token', data.session.refresh_token, COOKIE_OPTIONS);
+      res.cookie('sb_refresh_token', data.session.refresh_token, getCookieOptions());
     }
 
     logger.info(`User logged in: ${normalizedEmail}`, req.id, 'AuthRoutes');
@@ -308,19 +302,35 @@ router.post('/login', async (req: AuthenticatedRequest, res: Response, next: Nex
 router.post('/session', (req: AuthenticatedRequest, res: Response) => {
   const { accessToken, refreshToken } = req.body || {};
   if (accessToken) {
-    res.cookie('sb_access_token', accessToken, COOKIE_OPTIONS);
+    res.cookie('sb_access_token', accessToken, getCookieOptions());
   }
   if (refreshToken) {
-    res.cookie('sb_refresh_token', refreshToken, COOKIE_OPTIONS);
+    res.cookie('sb_refresh_token', refreshToken, getCookieOptions());
   }
   res.json({ status: 'ok', message: 'HTTP-only session established' });
 });
 
 // POST /auth/logout
-router.post('/logout', (_req: AuthenticatedRequest, res: Response) => {
-  res.clearCookie('sb_access_token', { path: '/' });
-  res.clearCookie('sb_refresh_token', { path: '/' });
-  res.status(204).send();
+router.post('/logout', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const accessToken: string | undefined = req.cookies?.sb_access_token;
+    const refreshToken: string | undefined = req.cookies?.sb_refresh_token;
+
+    // Delete the cookies with the SAME attributes they were set with. A cookie set with
+    // SameSite=None; Secure is not reliably removed by a deletion that omits those attributes,
+    // which made logout silently fail when the API is on a different site than the frontend.
+    const { maxAge: _maxAge, ...clearOptions } = getCookieOptions();
+    res.clearCookie('sb_access_token', clearOptions);
+    res.clearCookie('sb_refresh_token', clearOptions);
+
+    // Revoke the session server-side so a refresh token (or a request still in flight) cannot
+    // sign the user straight back in.
+    await revokeSession(accessToken, refreshToken);
+
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
 });
 
 // GET /auth/me - Session Restoration
@@ -419,6 +429,9 @@ router.get('/google', async (req: AuthenticatedRequest, res: Response, next: Nex
         queryParams: {
           code_challenge: codeChallenge,
           code_challenge_method: 'S256',
+          // Always show Google's account chooser, so signing out of AquaVision and clicking
+          // "Continue with Google" again does not silently reuse the last Google account.
+          prompt: 'select_account',
         },
       },
     });
@@ -488,9 +501,14 @@ router.get('/callback', async (req: AuthenticatedRequest, res: Response, next: N
     // Check profile suspension
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('id, role, is_suspended')
+      .select('id, role, is_suspended, display_name')
       .eq('id', authUser.id)
       .single();
+
+    const oauthName: string =
+      authUser.user_metadata?.full_name ||
+      authUser.user_metadata?.name ||
+      (authUser.email ? String(authUser.email).split('@')[0] : '');
 
     if (profile?.is_suspended) {
       logger.warn(`Suspended user ${authUser.id} attempted Google OAuth login`, req.id, 'AuthRoutes');
@@ -502,7 +520,7 @@ router.get('/callback', async (req: AuthenticatedRequest, res: Response, next: N
       const { error: insertErr } = await supabaseAdmin.from('profiles').insert({
         id: authUser.id,
         email: authUser.email,
-        display_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
+        display_name: oauthName || null,
         avatar_url: authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture || null,
         role: 'user',
         is_suspended: false,
@@ -513,10 +531,15 @@ router.get('/callback', async (req: AuthenticatedRequest, res: Response, next: N
       }
     }
 
+    // Existing profile without a name (e.g. created before the name was known): fill it in.
+    if (profile && !profile.display_name && oauthName) {
+      await supabaseAdmin.from('profiles').update({ display_name: oauthName }).eq('id', authUser.id);
+    }
+
     // Set HTTP-only, Secure session cookies
-    res.cookie('sb_access_token', tokenData.access_token, COOKIE_OPTIONS);
+    res.cookie('sb_access_token', tokenData.access_token, getCookieOptions());
     if (tokenData.refresh_token) {
-      res.cookie('sb_refresh_token', tokenData.refresh_token, COOKIE_OPTIONS);
+      res.cookie('sb_refresh_token', tokenData.refresh_token, getCookieOptions());
     }
 
     logger.info(`User authenticated via Google OAuth (PKCE): ${authUser.email}`, req.id, 'AuthRoutes');

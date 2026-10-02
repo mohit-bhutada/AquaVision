@@ -95,7 +95,7 @@ function Hero() {
       </div>
 
       <div className="wrap relative flex flex-1 flex-col pb-32 pt-10 md:pb-40">
-        <img src="/aquavision.png" alt="AquaVision" width={48} height={48} className="mx-auto h-12 w-12 object-contain" />
+        
         <h1 className="mt-auto text-[52px] leading-[0.98] tracking-[-0.045em] text-white sm:text-[80px] lg:text-[112px]" aria-label="See what the water hides.">
           <span className="block"><Letters text="See what" delay={0.2} /></span>
           <span className="serif block pl-[12%] md:pl-[22%]"><Letters text="the water" delay={0.35} /></span>

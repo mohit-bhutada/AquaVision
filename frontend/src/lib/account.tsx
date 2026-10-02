@@ -26,6 +26,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   const [subscription, setSubscription] = useState<SubscriptionState | null>(null);
   const [error, setError] = useState('');
   const inflight = useRef<Promise<void> | null>(null);
+  // Bumped on every logout. A profile request that started before a logout and finishes after it
+  // must not flip the UI back to "signed in".
+  const epoch = useRef(0);
+  const logoutInflight = useRef<Promise<void> | null>(null);
 
   const clear = () => {
     setUser(null);
@@ -35,10 +39,12 @@ export function AccountProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => {
     // Collapse concurrent refreshes (mount + focus + login) into one request.
+    const startedAt = epoch.current;
     inflight.current ??= api
       .profile()
       .then(
         (p) => {
+          if (startedAt !== epoch.current) return; // a logout happened meanwhile: ignore
           setUser(p.user);
           setCredits(p.credits);
           setSubscription(p.subscription);
@@ -46,6 +52,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
           setStatus('in');
         },
         (e: ApiError) => {
+          if (startedAt !== epoch.current) return;
           clear();
           if (e.status === 401 || e.status === 403) setStatus('out');
           else {
@@ -67,10 +74,21 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     await Promise.all([api.subscription().then(setSubscription, () => {}), api.credits().then(setCredits, () => {})]);
   }, []);
 
-  const logout = useCallback(async () => {
-    await api.logout().catch(() => {});
-    clear();
-    setStatus('out');
+  const logout = useCallback(() => {
+    // One logout at a time: extra clicks while it is running share the same request instead of
+    // firing more, so tapping repeatedly can no longer sign out and back in.
+    logoutInflight.current ??= (async () => {
+      epoch.current += 1;
+      inflight.current = null;
+      clear();
+      setStatus('out'); // the UI signs out immediately
+      await api.logout().catch(() => {});
+      clear();
+      setStatus('out');
+    })().finally(() => {
+      logoutInflight.current = null;
+    });
+    return logoutInflight.current;
   }, []);
 
   useEffect(() => {
