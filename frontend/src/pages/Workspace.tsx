@@ -142,7 +142,7 @@ export default function Workspace() {
     }
   };
 
-  const preview = picked ? <img src={assetUrl(picked.url)} crossOrigin="use-credentials" alt="Selected underwater image" className="h-full w-full object-contain" /> : <Placeholder tone="murky" label="Preview placeholder" className="h-full w-full" />;
+  const preview = picked ? <img src={assetUrl(picked.url)} alt="Selected underwater image" className="h-full w-full object-contain" /> : <Placeholder tone="murky" label="Preview placeholder" className="h-full w-full" />;
 
   return (
     <AppShell className="lg:h-[calc(100vh-4rem)] lg:overflow-hidden lg:pb-0">
@@ -272,8 +272,8 @@ export default function Workspace() {
                     <CompareSlider
                       toggle
                       boxClass="aspect-[16/10] rounded-3xl"
-                      before={picked ? <img src={assetUrl(picked.url)} crossOrigin="use-credentials" alt="Original" className="h-full w-full object-cover" /> : <Placeholder tone="murky" className="h-full w-full" />}
-                      after={result?.enhancedUrl ? <img src={assetUrl(result.enhancedUrl)} crossOrigin="use-credentials" alt="AquaVision enhanced" className="h-full w-full object-cover" /> : <Placeholder tone="clear" className="h-full w-full" />}
+                      before={picked ? <img src={assetUrl(picked.url)} alt="Original" className="h-full w-full object-cover" /> : <Placeholder tone="murky" className="h-full w-full" />}
+                      after={result?.enhancedUrl ? <img src={assetUrl(result.enhancedUrl)} alt="AquaVision enhanced" className="h-full w-full object-cover" /> : <Placeholder tone="clear" className="h-full w-full" />}
                     />
                   </div>
                   <div className="mt-8 flex flex-wrap gap-3">

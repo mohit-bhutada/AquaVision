@@ -186,10 +186,10 @@ function Reel() {
           className="h-full"
           value={pos}
           onValue={setPos}
-          before={<Placeholder tone="murky" label="" className="h-full w-full" />}
-          after={<Placeholder tone="clear" label="" className="h-full w-full" />}
+          before={<img src="/images/pic scroll og.png" tone="murky" label="Original Image" className="h-full w-full" />}
+          after={<img src="/images/pic scroll enhance.png" tone="clear" label="Enhanced Image" className="h-full w-full" />}
         />
-        <span className="absolute left-4 top-4 z-10 rounded-full bg-black/40 px-3 py-1 text-xs text-white backdrop-blur-sm">Demo image placeholder</span>
+        <span className="absolute left-4 top-4 z-10 rounded-full bg-black/40 px-3 py-1 text-xs text-white backdrop-blur-sm">Demo image</span>
         <div className="pointer-events-none absolute inset-x-0 top-1/2 z-[5] -translate-y-1/2 overflow-hidden text-[64px] leading-none text-white/90 md:text-[150px]" aria-hidden="true">
           <div className="marquee gap-16 pr-16">
             {Array.from({ length: 4 }, (_, i) => (
@@ -730,44 +730,78 @@ function WorkspaceMock({ steps }: { steps: string[] }) {
 
 /* ---------------- 09 Technology ---------------- */
 const STACK: [string, string[]][] = [
-  ['AI', ['PyTorch', 'AquaVision inference pipeline']],
-  ['Backend', ['Node.js', 'Express', 'FastAPI', 'Uvicorn']],
-  ['Database', ['PostgreSQL', 'Supabase']],
-  ['Frontend', ['React', 'TypeScript', 'Vite', 'Tailwind CSS']],
-  ['Security', ['HTTP-only cookies', 'Server-side authorization', 'Secure API validation']],
+  ['AI / ML', ['Python', 'PyTorch', 'ONNX Runtime', 'OpenCV', 'AquaVision inference pipeline']],
+  ['Backend', ['Python', 'FastAPI', 'Uvicorn']],
+  ['Database', ['PostgreSQL', 'SQLAlchemy 2.0', 'Alembic']],
+  ['Frontend', ['React', 'TypeScript', 'Vite', 'Tailwind CSS', 'React Router']],
+  ['Security', ['HTTP-only JWT cookies', 'bcrypt password hashing', 'Backend-authoritative authorization']],
 ];
+
+const TECH_FALLBACKS: Record<string, string> = {
+  Python: '⌁',
+  'ONNX Runtime': '○',
+  OpenCV: '◉',
+  'AquaVision inference pipeline': '♢',
+  'SQLAlchemy 2.0': '◆',
+  Alembic: '⌁',
+  'React Router': '↝',
+  'HTTP-only JWT cookies': '⌁',
+  'bcrypt password hashing': '⌕',
+  'Backend-authoritative authorization': '◇',
+};
+
 function Technology() {
-  const logos = Object.keys(BRANDS);
+  const logos = ['Python', 'PyTorch', 'ONNX Runtime', 'OpenCV', 'FastAPI', 'Uvicorn', 'PostgreSQL', 'SQLAlchemy', 'Alembic', 'React', 'TypeScript', 'Vite', 'Tailwind CSS', 'React Router'];
+
+  const Mark = ({ name }: { name: string }) => {
+    if (TECH_FALLBACKS[name]) {
+      return (
+        <span
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-[18px] leading-none text-large"
+          aria-hidden="true"
+        >
+          {TECH_FALLBACKS[name]}
+        </span>
+      );
+    }
+
+    return <TechMark name={name} />;
+  };
+
   return (
     <section id="technology" className="py-32 md:py-44">
       <div className="wrap">
         <div className="grid gap-8 md:grid-cols-2 md:items-end">
           <Lines lines={['Built as an', <span className="serif">AI-powered platform.</span>]} className="text-[36px] leading-[1.05] md:text-[64px]" />
-          <Reveal className="max-w-sm text-[15px] leading-relaxed md:justify-self-end">Only the technologies AquaVision actually runs on — from the PyTorch model to the secure web app.</Reveal>
+          <Reveal className="max-w-sm text-[15px] leading-relaxed md:justify-self-end">AquaVision combines AI-powered underwater image enhancement with a secure full-stack platform — from PyTorch and ONNX Runtime inference to the React interface and PostgreSQL database.</Reveal>
         </div>
       </div>
+
       <div className="logo-band mt-14 overflow-hidden border-y border-line py-6 text-large [mask-image:linear-gradient(90deg,transparent,black_10%,black_90%,transparent)]" aria-hidden="true">
         <div className="marquee gap-14 pr-14">
           {[0, 1].map((k) => (
             <span key={k} className="flex items-center gap-14">
               {logos.map((n) => (
                 <span key={n} className="flex items-center gap-3 whitespace-nowrap text-[18px]">
-                  <TechMark name={n} /> {n}
+                  <Mark name={n} />
+                  {n}
                 </span>
               ))}
             </span>
           ))}
         </div>
       </div>
+
       <div className="wrap">
         <Reveal stagger className="mt-14 grid border-l border-t border-line sm:grid-cols-2 lg:grid-cols-5">
           {STACK.map(([cat, items]) => (
             <div key={cat} className="tech-cell border-b border-r border-line p-6 transition-colors duration-300 hover:bg-surface md:min-h-[280px]">
               <p className="text-sm text-large">{cat}</p>
+
               <ul className="mt-10 space-y-4 text-[17px] text-head">
                 {items.map((i) => (
                   <li key={i} className="tech-row flex items-start gap-3">
-                    <TechMark name={i} />
+                    <Mark name={i} />
                     <span className="leading-snug">{i}</span>
                   </li>
                 ))}
@@ -852,18 +886,19 @@ function Depth() {
 /* ---------------- 11 Research + results ---------------- */
 const METRICS: [string, string, string, string][] = [
   ['PSNR', 'Peak signal-to-noise ratio', 'Pixel-level fidelity to a reference image, in decibels.', 'Full-reference'],
-  ['SSIM', 'Structural similarity', 'How closely structure, contrast and luminance match a reference (0–1).', 'Full-reference'],
-  ['UIQM', 'Underwater image quality measure', 'Combines colorfulness, sharpness and contrast of the image itself.', 'No-reference'],
-  ['UCIQE', 'Underwater color image quality evaluation', 'Combines chroma, saturation and contrast of the image itself.', 'No-reference'],
+  ['SSIM', 'Structural similarity', 'Measures how closely structure, contrast and luminance match a reference image (0–1).', 'Full-reference'],
+  ['UIQM', 'Underwater image quality measure', 'Evaluates underwater image quality using colorfulness, sharpness and contrast without a reference image.', 'No-reference'],
+  ['UCIQE', 'Underwater color image quality evaluation', 'Evaluates underwater image quality using chroma, saturation and contrast without a reference image.', 'No-reference'],
 ];
+
 function Research() {
-  const keys = ['Computer Vision', 'Deep Learning', 'Image Enhancement', 'Underwater Imaging', 'AI', 'Color Restoration', 'PyTorch'];
+  const keys = ['Underwater Image Enhancement', 'Deep Learning', 'Computer Vision', 'Image Restoration', 'Color Restoration', 'Contrast Enhancement', 'PyTorch'];
   return (
     <section id="research" className="py-32 md:py-44">
       <div className="wrap grid gap-10 md:grid-cols-[1.2fr_1fr]">
         <Lines lines={['An engineering approach', <span className="serif">to underwater vision.</span>]} className="text-[36px] leading-[1.05] md:text-[60px]" />
         <Reveal className="self-end text-[17px] leading-relaxed">
-          AquaVision explores AI-based underwater image enhancement to improve the visual quality and interpretability of degraded underwater imagery.
+          AquaVision uses AI-powered image enhancement to restore color, contrast, visibility and fine details in degraded underwater imagery.
         </Reveal>
       </div>
       <div className="key-band mt-12 overflow-hidden py-2 [mask-image:linear-gradient(90deg,transparent,black_8%,black_92%,transparent)]" aria-label="Research areas">

@@ -6,6 +6,7 @@ import { AppError } from '../middleware/errorHandler.js';
 import { enhanceImageWithMLService } from '../services/mlService.js';
 import { createRateLimiter } from '../middleware/rateLimit.js';
 import { createProjectWithEnhancement } from '../services/projectService.js';
+import { formatProjectAsync } from './projects.js';
 import {
   reserveCredit,
   refundCredit,
@@ -119,16 +120,13 @@ const handleEnhance = async (req: AuthenticatedRequest, res: Response, next: any
     const updatedCredits = await getUserCreditState(userId);
 
     // 5. Return API CONTRACT response: { project: Project, credits: Credits }
+    // Build the project exactly like the history/list endpoints do (signed storage URLs that need no
+    // cookie). Relative /api/v1/projects/:id/enhanced links only load when the browser sends the login
+    // cookie on an <img> request, which is unreliable across sites, so the freshly enhanced image
+    // would not show until the page was reloaded and the project opened from history.
+    const formattedProject = await formatProjectAsync(project);
     res.status(201).json({
-      project: {
-        id: project.id,
-        name: project.title,
-        status: 'COMPLETED',
-        originalUrl: `/api/v1/projects/${project.id}/original`,
-        enhancedUrl: `/api/v1/projects/${project.id}/enhanced`,
-        shareToken: null,
-        createdAt: project.created_at,
-      },
+      project: { ...formattedProject, status: 'COMPLETED' },
       credits: formatCreditsResponse(updatedCredits),
     });
   } catch (err) {

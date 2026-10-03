@@ -149,7 +149,9 @@ export async function enhanceImageWithMLService(
         method: 'POST',
         headers,
         body: formData,
-        redirect: 'error', // never forward the API key across a redirect
+        // 'manual', not 'error': Cloudflare Workers only supports 'follow' | 'manual'. We never follow
+        // redirects (the API key must not be forwarded to another URL); a 3xx is treated as a failure below.
+        redirect: 'manual',
         signal: AbortSignal.timeout(Math.max(1000, deadline - Date.now())),
       });
     } catch (err: any) {
@@ -169,6 +171,17 @@ export async function enhanceImageWithMLService(
     }
 
     const mlRequestId = response.headers.get('X-Request-ID');
+
+    // The ML endpoints never redirect. A 3xx almost always means the base URL is wrong
+    // (http instead of https, a trailing path, or a renamed host) and must not be followed.
+    if (response.status >= 300 && response.status < 400) {
+      logger.error(
+        `ML service redirected (HTTP ${response.status}) to "${response.headers.get('location') || 'unknown'}". Check AQUAVISION_ML_BASE_URL / ML_SERVICE_URL (use the exact https base URL).`,
+        requestId,
+        'MLService'
+      );
+      throw new AppError('The enhancement engine is not configured correctly. Please try again later.', 502, 'ML_FAILED');
+    }
 
     if (response.status !== 200) {
       const body = await readErrorBody(response);
