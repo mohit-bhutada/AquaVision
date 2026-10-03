@@ -13,8 +13,11 @@ type State = 'empty' | 'selected' | 'processing' | 'complete' | 'error';
 const STEPS = ['Upload', 'Process', 'Enhance', 'Compare', 'Download'];
 const STEP_OF: Record<State, number> = { empty: 0, selected: 0, processing: 1, complete: 3, error: 1 };
 const MAX = 20 * 1024 * 1024;
-const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const ALLOWED_EXTS = ['.jpg', '.jpeg', '.png', '.webp'];
+// The enhancement engine only accepts JPEG and PNG, up to 2,073,600 pixels (e.g. 1920×1080) and 4,096 px per side.
+const ALLOWED_TYPES = ['image/jpeg', 'image/png'];
+const ALLOWED_EXTS = ['.jpg', '.jpeg', '.png'];
+const MAX_PIXELS = 2_073_600;
+const MAX_SIDE = 4096;
 
 type Picked = { file: File; url: string; width: number; height: number };
 
@@ -61,12 +64,20 @@ export default function Workspace() {
     const typeLower = (file.type || '').toLowerCase();
     const extLower = file.name.includes('.') ? file.name.substring(file.name.lastIndexOf('.')).toLowerCase() : '';
     const isValid = ALLOWED_TYPES.includes(typeLower) || ALLOWED_EXTS.includes(extLower);
-    if (!isValid) return setFileError('Unsupported file type. Please upload a JPEG, PNG, or WebP image.');
+    if (!isValid) return setFileError('Unsupported file type. Please upload a JPEG or PNG image.');
     if (file.size > MAX) return setFileError('This file is larger than 20 MB.');
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      setPicked({ file, url, width: img.naturalWidth, height: img.naturalHeight });
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      if (w > MAX_SIDE || h > MAX_SIDE || w * h > MAX_PIXELS) {
+        URL.revokeObjectURL(url);
+        return setFileError(
+          `This image is ${w}×${h}. The maximum is ${MAX_PIXELS.toLocaleString('en-US')} pixels (for example 1920×1080). Please resize it and try again.`,
+        );
+      }
+      setPicked({ file, url, width: w, height: h });
       setState('selected');
     };
     img.onerror = () => setFileError('This image could not be read.');
@@ -209,10 +220,10 @@ export default function Workspace() {
                     <Upload size={32} className={`mx-auto ${drag ? 'text-accent' : 'text-large'}`} />
                     <p className="mt-5 text-[22px] text-head">Drag and drop your image here</p>
                     <Pill className="mt-6" onClick={() => input.current?.click()}>Upload image</Pill>
-                    <p className="mt-5 text-sm text-large">JPEG, PNG, WebP · max 20 MB</p>
+                    <p className="mt-5 text-sm text-large">JPEG, PNG · max 20 MB · up to 1920×1080</p>
                     {fileError && <p className="mt-4 text-sm text-error" role="alert">{fileError}</p>}
                   </div>
-                  <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Upload image" onChange={(e) => pick(e.target.files?.[0])} />
+                  <input ref={input} type="file" accept="image/jpeg,image/png" className="sr-only" aria-label="Upload image" onChange={(e) => pick(e.target.files?.[0])} />
                 </div>
               )}
 
@@ -245,7 +256,7 @@ export default function Workspace() {
                         <Pill small onClick={() => input.current?.click()} disabled={state === 'processing'}>Replace</Pill>
                         <Pill small onClick={reset} disabled={state === 'processing'}>Remove</Pill>
                       </div>
-                      <input ref={input} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" aria-label="Replace image" onChange={(e) => pick(e.target.files?.[0])} />
+                      <input ref={input} type="file" accept="image/jpeg,image/png" className="sr-only" aria-label="Replace image" onChange={(e) => pick(e.target.files?.[0])} />
                       {fileError && <p className="text-sm text-error" role="alert">{fileError}</p>}
                     </div>
                   </aside>
@@ -342,4 +353,3 @@ export default function Workspace() {
     </AppShell>
   );
 }
-

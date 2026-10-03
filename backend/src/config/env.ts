@@ -65,7 +65,7 @@ export function validateEnv(): EnvironmentConfig {
   // Dev-only fallback. Production refuses to start without a real secret (see check below).
   const DEV_OTP_PEPPER = 'dev-only-insecure-otp-pepper-do-not-use-in-production';
   const otpPepper = process.env.OTP_PEPPER || DEV_OTP_PEPPER;
-  const mlServiceTimeoutMs = Math.max(1000, parseInt(process.env.ML_SERVICE_TIMEOUT_MS || '120000', 10) || 120000);
+  const mlServiceTimeoutMs = Math.max(1000, parseInt(process.env.ML_SERVICE_TIMEOUT_MS || '180000', 10) || 180000);
   const otpExpirySeconds = parseInt(process.env.OTP_EXPIRY_SECONDS || '600', 10);
   const otpMaxAttempts = parseInt(process.env.OTP_MAX_ATTEMPTS || '5', 10);
   const otpResendCooldownSeconds = parseInt(process.env.OTP_RESEND_COOLDOWN_SECONDS || '60', 10);
@@ -123,4 +123,3 @@ export const config: EnvironmentConfig = new Proxy({} as EnvironmentConfig, {
     return current[prop];
   },
 });
-

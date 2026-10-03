@@ -1,6 +1,6 @@
 import { Router, Response, NextFunction } from 'express';
 import { requireAuth, AuthenticatedRequest, revokeSession } from '../middleware/auth.js';
-import { supabaseAdmin } from '../lib/supabase.js';
+import { supabaseAdmin, createAuthClient } from '../lib/supabase.js';
 import { createRateLimiter } from '../middleware/rateLimit.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { config } from '../config/env.js';
@@ -162,7 +162,7 @@ router.post('/verify-otp', async (req: AuthenticatedRequest, res: Response, next
       });
 
       if (linkData?.properties?.hashed_token) {
-        const { data: sessionData } = await supabaseAdmin.auth.verifyOtp({
+        const { data: sessionData } = await createAuthClient().auth.verifyOtp({
           token_hash: linkData.properties.hashed_token,
           type: 'magiclink',
         });
@@ -219,7 +219,7 @@ router.post('/login', async (req: AuthenticatedRequest, res: Response, next: Nex
     // Enforce account lockout before password attempt
     checkLoginLock(normalizedEmail);
 
-    const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+    const { data, error } = await createAuthClient().auth.signInWithPassword({
       email: normalizedEmail,
       password,
     });
@@ -422,7 +422,7 @@ router.get('/google', async (req: AuthenticatedRequest, res: Response, next: Nex
     const callbackUrl = `${protocol}://${hostHeader}/api/v1/auth/callback?next=${encodeURIComponent(nextPath)}`;
 
     // 4. Initiate Supabase OAuth with PKCE code_challenge
-    const { data, error } = await supabaseAdmin.auth.signInWithOAuth({
+    const { data, error } = await createAuthClient().auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: callbackUrl,

@@ -1,4 +1,5 @@
 import { escapeSearchTerm } from '../lib/searchTerm.js';
+import { firstRow } from '../lib/relations.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { logger } from '../lib/logger.js';
 import { config } from '../config/env.js';
@@ -133,19 +134,24 @@ export class AdminService {
     }
 
     // Format output
-    const users = (data || []).map((u: any) => ({
-      id: u.id,
-      email: u.email,
-      displayName: u.display_name,
-      role: u.role,
-      isSuspended: !!u.is_suspended,
-      createdAt: u.created_at,
-      planCode: u.subscriptions?.[0]?.plans?.code || 'FREE',
-      planName: u.subscriptions?.[0]?.plans?.name || 'Free Tier',
-      subscriptionStatus: u.subscriptions?.[0]?.status || 'ACTIVE',
-      dailyBalance: u.credit_balances?.[0]?.daily_base_balance ?? 10,
-      monthlyBalance: u.credit_balances?.[0]?.monthly_bonus_balance ?? 0,
-    }));
+    const users = (data || []).map((u: any) => {
+      const sub = firstRow<any>(u.subscriptions);
+      const balance = firstRow<any>(u.credit_balances);
+      const plan = firstRow<any>(sub?.plans);
+      return {
+        id: u.id,
+        email: u.email,
+        displayName: u.display_name,
+        role: u.role,
+        isSuspended: !!u.is_suspended,
+        createdAt: u.created_at,
+        planCode: plan?.code || 'FREE',
+        planName: plan?.name || 'Free Tier',
+        subscriptionStatus: sub?.status || 'ACTIVE',
+        dailyBalance: balance?.daily_base_balance ?? 10,
+        monthlyBalance: balance?.monthly_bonus_balance ?? 0,
+      };
+    });
 
     return {
       users,

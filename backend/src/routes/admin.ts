@@ -7,6 +7,7 @@ import { getUserSubscriptionDetails, formatSubscriptionState } from '../services
 import { formatUserResponse } from './auth.js';
 import { uuidParam, isUuid } from '../middleware/validateParams.js';
 import { escapeSearchTerm } from '../lib/searchTerm.js';
+import { firstRow } from '../lib/relations.js';
 import { createRateLimiter } from '../middleware/rateLimit.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { supabaseAdmin } from '../lib/supabase.js';
@@ -77,7 +78,7 @@ router.get('/users', async (req: AdminRequest, res: Response, next: NextFunction
 
     const items = (data || []).map((p: any) => {
       const u = formatUserResponse(p);
-      const planCode = p.subscriptions?.[0]?.plans?.code || 'FREE';
+      const planCode = firstRow<any>(firstRow<any>(p.subscriptions)?.plans)?.code || 'FREE';
       return {
         ...u,
         plan: planCode as any,

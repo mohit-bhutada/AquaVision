@@ -26,11 +26,11 @@ const upload = multer({
     fileSize: MAX_UPLOAD_BYTES,
   },
   fileFilter: (_req, file, cb) => {
-    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png'];
     if (allowedMimeTypes.includes(file.mimetype.toLowerCase())) {
       cb(null, true);
     } else {
-      cb(new AppError('Unsupported file type. Please upload a JPEG, PNG, or WebP image.', 415, 'UNSUPPORTED_FILE_TYPE'));
+      cb(new AppError('Unsupported file type. Please upload a JPEG or PNG image.', 415, 'UNSUPPORTED_FILE_TYPE'));
     }
   },
 });
@@ -149,4 +149,3 @@ router.post('/v1/enhance', requireAuth, enhanceRateLimiter, processUpload('file'
 router.post('/enhance', requireAuth, enhanceRateLimiter, processUpload('file'), handleEnhance);
 
 export default router;
-

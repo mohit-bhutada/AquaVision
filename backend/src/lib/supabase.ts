@@ -26,6 +26,20 @@ export function getSupabaseAdmin(): SupabaseClient<any> {
   return cachedClient;
 }
 
+/**
+ * A throwaway client for calls that CREATE a user session (signInWithPassword, verifyOtp,
+ * signInWithOAuth). supabase-js keeps the resulting session in memory even with
+ * persistSession: false, and from then on sends THAT USER'S token on every database request.
+ * If that happened on the shared admin client, later admin queries (and other users' requests)
+ * would run as the last user who logged in instead of as the service role. Use a fresh client per
+ * call so the shared admin client never changes identity.
+ */
+export function createAuthClient(): SupabaseClient<any> {
+  return createClient(config.supabase.url, config.supabase.serviceRoleKey || 'fallback-dev-key', {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}
+
 // Single authoritative server-side Supabase admin client (NEVER EXPOSE TO FRONTEND)
 export const supabaseAdmin: SupabaseClient<any> = new Proxy({} as SupabaseClient<any>, {
   get(_target, prop: keyof SupabaseClient<any>) {
@@ -37,5 +51,3 @@ export const supabaseAdmin: SupabaseClient<any> = new Proxy({} as SupabaseClient
     return val;
   },
 });
-
-
