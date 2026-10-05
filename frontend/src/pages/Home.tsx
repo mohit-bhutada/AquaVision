@@ -5,7 +5,7 @@ import { Arrow as ArrowRight, ArrowDown, Drop, Eye, Ray, Upload } from '../compo
 import { Shape } from '../components/Icons';
 import { AnalyzeVisual, EnhanceVisual, InputVisual, OutputVisual, RestoreVisual, useAnalysis } from '../components/AnalyzeDemo';
 import { DepthGauge } from '../components/DepthGauge';
-import { BRANDS, TechMark } from '../components/TechLogos';
+import { TechMark } from '../components/TechLogos';
 import { PublicShell } from '../components/Layout';
 import { Ocean } from '../components/Ocean';
 import { ClipReveal, Letters, Lines, Reveal, useGsap, W, WordScrub } from '../components/Reveal';
@@ -186,8 +186,8 @@ function Reel() {
           className="h-full"
           value={pos}
           onValue={setPos}
-          before={<img src="/images/pic scroll og.png" tone="murky" label="Original Image" className="h-full w-full" />}
-          after={<img src="/images/pic scroll enhance.png" tone="clear" label="Enhanced Image" className="h-full w-full" />}
+          before={<img src="/images/pic scroll og.png" alt="Original Image" className="h-full w-full" />}
+          after={<img src="/images/pic scroll enhance.png" alt="Enhanced Image" className="h-full w-full" />}
         />
         <span className="absolute left-4 top-4 z-10 rounded-full bg-black/40 px-3 py-1 text-xs text-white backdrop-blur-sm">Demo image</span>
         <div className="pointer-events-none absolute inset-x-0 top-1/2 z-[5] -translate-y-1/2 overflow-hidden text-[64px] leading-none text-white/90 md:text-[150px]" aria-hidden="true">
@@ -932,7 +932,6 @@ function Research() {
               <p className="mt-10 text-[56px] leading-none tracking-[-0.05em] text-head md:text-[64px]">{m}</p>
               <p className="mt-3 min-h-[2.8em] text-sm leading-snug text-head">{full}</p>
               <p className="mt-2 flex-1 text-[15px] leading-relaxed">{def}</p>
-              <p className="mt-8 border-t border-line pt-4 text-xs text-large">Result: pending verified experiments</p>
               </div>
             </div>
           ))}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CompareSlider } from '../components/CompareSlider';
 import { TLink, useGo } from '../components/Curtain';
 import { Upload } from '../components/Icons';
@@ -25,6 +26,7 @@ const fmtSize = (b: number) => (b > 1024 * 1024 ? `${(b / 1024 / 1024).toFixed(1
 
 export default function Workspace() {
   const go = useGo();
+  const [params, setParams] = useSearchParams();
   const dev = useDevState(['empty', 'selected', 'processing', 'complete', 'error'] as const);
   const [state, setState] = useState<State>(dev ?? 'empty');
   const [picked, setPicked] = useState<Picked | null>(null);
@@ -41,6 +43,23 @@ export default function Workspace() {
   const input = useRef<HTMLInputElement>(null);
   const { refreshCredits } = useAccount();
   const busy = useRef(false);
+  const activeRef = useRef<string | null>(null);
+  const wantedId = params.get('project');
+  const [restoring, setRestoring] = useState(Boolean(wantedId));
+
+  // Keep the open project in the address (/workspace?project=ID) so a page refresh brings the same image back.
+  const rememberProject = (id: string | null) => {
+    activeRef.current = id;
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (id) next.set('project', id);
+        else next.delete('project');
+        return next;
+      },
+      { replace: true },
+    );
+  };
 
   useEffect(() => () => {
     if (picked) URL.revokeObjectURL(picked.url);
@@ -93,6 +112,7 @@ export default function Workspace() {
       const { project, credits } = await api.enhance(picked.file);
       setResult(project);
       setActiveProjectId(project.id);
+      rememberProject(project.id);
       refreshCredits(credits); // the backend returns the balance after this enhancement
       setState('complete');
       setRefreshSidebarTrigger((n) => n + 1);
@@ -112,11 +132,13 @@ export default function Workspace() {
     setError(null);
     setState('empty');
     setActiveProjectId(null);
+    rememberProject(null);
   };
 
   const handleSelectProject = (project: Project) => {
     setResult(project);
     setActiveProjectId(project.id);
+    rememberProject(project.id);
     if (project.originalUrl) {
       setPicked({
         file: null as any,
@@ -130,6 +152,30 @@ export default function Workspace() {
     setState('complete');
     setError(null);
   };
+
+  // After a refresh (or opening a /workspace?project=ID link) load that project and show it again.
+  useEffect(() => {
+    if (!wantedId || wantedId === activeRef.current || busy.current) {
+      setRestoring(false);
+      return;
+    }
+    let cancelled = false;
+    setRestoring(true);
+    api
+      .project(wantedId)
+      .then((p) => {
+        if (!cancelled) handleSelectProject(p);
+      })
+      .catch(() => {
+        if (!cancelled) rememberProject(null); // deleted or not yours: fall back to a fresh workspace
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wantedId]);
 
   const openShareModal = async (project: Project) => {
     if (share.busy) return;
@@ -171,7 +217,7 @@ export default function Workspace() {
             </div>
 
             {/* Main Workspace Initial Heading & Instruction */}
-            {state === 'empty' && (
+            {state === 'empty' && !restoring && (
               <div className="mb-6">
                 <h1 className="text-[36px] font-normal leading-[1.05] tracking-[-0.03em] md:text-[54px] lg:text-[64px] text-head">
                   Enhance your <span className="serif italic font-normal">underwater images.</span>
@@ -179,6 +225,8 @@ export default function Workspace() {
                 <p className="mt-3 text-[15px] text-body">Upload an underwater image to begin.</p>
               </div>
             )}
+
+            {restoring && state === 'empty' && <p className="mb-6 text-[15px] text-body">Loading your image…</p>}
 
             {/* Selected Image State Header */}
             {state === 'selected' && (
@@ -202,7 +250,7 @@ export default function Workspace() {
             </ol>
 
             <div className="mt-8" aria-live="polite">
-              {state === 'empty' && (
+              {state === 'empty' && !restoring && (
                 <div
                   onDragOver={(e) => {
                     e.preventDefault();
