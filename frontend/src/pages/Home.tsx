@@ -186,8 +186,8 @@ function Reel() {
           className="h-full"
           value={pos}
           onValue={setPos}
-          before={<img src="/images/pic scroll og.png" alt="Original Image" className="h-full w-full" />}
-          after={<img src="/images/pic scroll enhance.png" alt="Enhanced Image" className="h-full w-full" />}
+          before={<img src="/images/pic-scroll-og.webp" alt="Original Image" width={1448} height={1086} loading="lazy" decoding="async" className="h-full w-full object-cover" />}
+          after={<img src="/images/pic-scroll-enhance.webp" alt="Enhanced Image" width={1448} height={1086} loading="lazy" decoding="async" className="h-full w-full object-cover" />}
         />
         <span className="absolute left-4 top-4 z-10 rounded-full bg-black/40 px-3 py-1 text-xs text-white backdrop-blur-sm">Demo image</span>
         <div className="pointer-events-none absolute inset-x-0 top-1/2 z-[5] -translate-y-1/2 overflow-hidden text-[64px] leading-none text-white/90 md:text-[150px]" aria-hidden="true">
@@ -260,7 +260,7 @@ function Problem() {
     );
   });
   return (
-    <section ref={ref} className="py-32 md:py-44">
+    <section ref={ref} className="overflow-x-clip py-32 md:py-44">
       <div className="wrap grid gap-8 md:grid-cols-2 md:items-end">
         <Lines lines={['Underwater images', <>lose more than <span className="hue serif" style={{ color: 'color-mix(in srgb, var(--accent) calc(var(--mix, 100) * 1%), #5f7d6c)' }}>color.</span></>]} className="text-[36px] leading-[1.05] md:text-[52px]" />
         <WordScrub className="max-w-sm text-[15px] leading-relaxed text-head md:justify-self-end">

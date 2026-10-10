@@ -22,11 +22,18 @@ export interface CreditReservationResult {
   errorCode?: string;
 }
 
+const RECONCILE_EVERY_MS = 60_000;
+let lastReconcileAt = 0;
+
 export async function getUserCreditState(userId: string): Promise<UserCreditState> {
   // 1. Trigger IST daily reset, expired grant cleanup & stale enhancement reconciliation
   try {
     await supabaseAdmin.rpc('check_and_reset_user_credits', { p_user_id: userId });
-    await reconcileStaleEnhancements();
+    // Global housekeeping: at most once a minute per instance instead of a table scan on every credit read.
+    if (Date.now() - lastReconcileAt > RECONCILE_EVERY_MS) {
+      lastReconcileAt = Date.now();
+      await reconcileStaleEnhancements();
+    }
   } catch (err: any) {
     logger.warn(`RPC check_and_reset_user_credits / reconciliation fallback check: ${err.message}`, undefined, 'CreditService');
   }
@@ -160,10 +167,13 @@ export async function createPendingEnhancementOperation(
 ): Promise<string> {
   const opId = globalThis.crypto.randomUUID();
   const metadata = JSON.stringify({ poolUsed, grantId: grantId || null });
+  // The column is globally UNIQUE. The file's SHA-256 alone collided whenever the same image was enhanced twice
+  // (by anyone), so the pending record - which crash recovery needs to refund the right pool - was never saved.
   const { error } = await supabaseAdmin.from('enhancement_operations').insert({
     id: opId,
     user_id: userId,
-    idempotency_key: idempotencyKey,
+    idempotency_key: `${idempotencyKey}:${opId}`,
+    sha256_checksum: /^[0-9a-f]{64}$/i.test(idempotencyKey) ? idempotencyKey : null,
     status: 'PROCESSING',
     error_message: metadata,
   });

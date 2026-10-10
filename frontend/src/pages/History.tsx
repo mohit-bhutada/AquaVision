@@ -463,7 +463,7 @@ function Projects() {
                           <div>
                             <button
                               onClick={() => setOpen(p)}
-                              className="text-left font-medium text-head text-sm truncate block max-w-md hover:text-accent transition-colors"
+                              className="text-left font-medium text-head text-sm truncate block w-full max-w-md hover:text-accent transition-colors"
                             >
                               {p.name}
                             </button>

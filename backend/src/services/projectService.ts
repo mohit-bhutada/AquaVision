@@ -7,6 +7,7 @@ import {
   uploadEnhancedImage,
   deleteStorageFile,
   deleteProjectStorageFiles,
+  deleteStorageObjects,
   downloadStorageFile,
 } from './storageService.js';
 
@@ -104,19 +105,8 @@ export async function createProjectWithEnhancement(params: {
     throw new AppError('Failed to persist project metadata in database.', 500);
   }
 
-  // 4. Record enhancement operation log
-  try {
-    await supabaseAdmin.from('enhancement_operations').insert({
-      user_id: userId,
-      idempotency_key: sha256 || crypto.randomUUID(),
-      project_id: projectId,
-      status: 'COMPLETED',
-      sha256_checksum: sha256,
-      completed_at: new Date().toISOString(),
-    });
-  } catch (opErr: any) {
-    logger.warn(`Non-critical enhancement_operation log insert warning: ${opErr.message}`, undefined, 'ProjectService');
-  }
+  // The operation log row was created before the ML call (createPendingEnhancementOperation) and is marked
+  // COMPLETED by the caller; inserting a second row here only produced a duplicate-key error.
 
   logger.info(`Successfully created project ${projectId} for user ${userId}`, undefined, 'ProjectService');
   return project as ProjectRecord;
@@ -182,19 +172,44 @@ export async function deleteProject(userId: string, projectId: string): Promise<
 }
 
 export async function deleteProjects(userId: string, projectIds: string[]): Promise<{ deletedIds: string[]; failedIds: string[] }> {
-  const deletedIds: string[] = [];
-  const failedIds: string[] = [];
-
-  for (const projectId of projectIds) {
-    try {
-      await deleteProject(userId, projectId);
-      deletedIds.push(projectId);
-    } catch (err: any) {
-      logger.error(`Failed bulk deletion for project ${projectId} of user ${userId}: ${err.message}`, undefined, 'ProjectService');
-      failedIds.push(projectId);
-    }
+  // Done as a handful of set-based queries instead of ~5 requests per project: a Cloudflare Worker may only
+  // make a limited number of outgoing requests per call, so deleting many projects one by one could fail midway.
+  const unique = [...new Set(projectIds)];
+  const { data: owned, error: lookupErr } = await supabaseAdmin
+    .from('projects')
+    .select('id, original_file_key, enhanced_file_key')
+    .eq('user_id', userId)
+    .in('id', unique);
+  if (lookupErr) {
+    logger.error(`Bulk delete lookup failed for user ${userId}: ${lookupErr.message}`, undefined, 'ProjectService');
+    return { deletedIds: [], failedIds: unique };
   }
 
+  const rows = owned || [];
+  const ownedIds = rows.map((r: any) => r.id as string);
+  const failedIds = unique.filter((id) => !ownedIds.includes(id)); // not found, or not this user's
+  if (ownedIds.length === 0) return { deletedIds: [], failedIds };
+
+  await supabaseAdmin.from('share_tokens').delete().in('project_id', ownedIds);
+  const { data: removed, error: deleteErr } = await supabaseAdmin
+    .from('projects')
+    .delete()
+    .eq('user_id', userId)
+    .in('id', ownedIds)
+    .select('id');
+  if (deleteErr) {
+    logger.error(`Bulk project delete failed for user ${userId}: ${deleteErr.message}`, undefined, 'ProjectService');
+    return { deletedIds: [], failedIds: unique };
+  }
+
+  const deletedIds = (removed || []).map((r: any) => r.id as string);
+  const keys = rows
+    .filter((r: any) => deletedIds.includes(r.id))
+    .flatMap((r: any) => [r.original_file_key, r.enhanced_file_key])
+    .filter((k: unknown): k is string => typeof k === 'string' && k.length > 0);
+  await deleteStorageObjects(keys);
+  failedIds.push(...ownedIds.filter((id) => !deletedIds.includes(id)));
+  logger.info(`Bulk deleted ${deletedIds.length} project(s) for user ${userId}`, undefined, 'ProjectService');
   return { deletedIds, failedIds };
 }
 

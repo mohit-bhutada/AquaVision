@@ -276,7 +276,7 @@ export default function Workspace() {
               )}
 
               {(state === 'selected' || state === 'processing') && (
-                <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
+                <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_320px]">
                   <div className="relative aspect-[4/3] overflow-hidden rounded-3xl border border-line bg-surface flex items-center justify-center p-2">
                     <div className={state === 'processing' ? 'h-full w-full opacity-40' : 'h-full w-full'}>{preview}</div>
                     {state === 'processing' && (

@@ -37,7 +37,7 @@ export default function Profile() {
           </div>
         )}
         {user && credits && sub && (
-          <div className="grid gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <section aria-label="Account" className="rounded-2xl border border-line p-6 md:p-8">
               <div className="flex items-center gap-4">
                 {user.avatarUrl ? (

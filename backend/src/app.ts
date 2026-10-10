@@ -15,19 +15,26 @@ import subscriptionRoutes from './routes/subscriptions.js';
 import adminRoutes from './routes/admin.js';
 
 const app = express();
-app.set('trust proxy', true);
+// The client IP is resolved explicitly (lib/clientIp.ts). `trust proxy: true` would believe any forged
+// X-Forwarded-For header and let a script dodge every per-IP rate limit.
+app.set('trust proxy', false);
+app.disable('x-powered-by');
 
 // 1. Request Correlation ID & Security Headers
 app.use(requestIdMiddleware);
 app.use(securityHeadersMiddleware);
 
 // 2. Dynamic CORS Configuration derived from config runtime binding
+// CORS_ORIGIN may list several frontends. The request's own origin is echoed back only if it is on that list;
+// other sites get no CORS headers at all (browsers then block them).
 app.use(
   cors({
-    origin: (_reqOrigin, callback) => {
-      callback(null, config.corsOrigin);
+    origin: (reqOrigin, callback) => {
+      if (!reqOrigin) return callback(null, false); // non-browser clients: no CORS headers needed
+      callback(null, config.corsOrigins.includes(reqOrigin.replace(/\/+$/, '')) ? reqOrigin : false);
     },
     credentials: true,
+    maxAge: 600, // let browsers cache the preflight for 10 minutes (fewer OPTIONS round trips)
   })
 );
 

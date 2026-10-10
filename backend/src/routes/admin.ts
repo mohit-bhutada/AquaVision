@@ -72,6 +72,7 @@ router.get('/users', async (req: AdminRequest, res: Response, next: NextFunction
     }
 
     query = query.order('created_at', { ascending: false });
+    query = query.limit(500);
 
     const { data, error } = await query;
     if (error) throw new AppError(error.message, 500, 'INTERNAL');
@@ -216,6 +217,7 @@ router.get('/subscription-requests', async (req: AdminRequest, res: Response, ne
     }
 
     query = query.order('requested_at', { ascending: false });
+    query = query.limit(500);
 
     const { data, error } = await query;
     if (error) throw new AppError(error.message, 500, 'INTERNAL');
@@ -345,7 +347,8 @@ router.get('/projects', async (_req: AdminRequest, res: Response, next: NextFunc
     const { data: projects, error } = await supabaseAdmin
       .from('projects')
       .select('*, profiles(id, email)')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(500);
 
     if (error) throw new AppError(error.message, 500, 'INTERNAL');
 
@@ -377,7 +380,8 @@ router.get('/audit-logs', async (_req: AdminRequest, res: Response, next: NextFu
     const { data: logs, error } = await supabaseAdmin
       .from('audit_logs')
       .select('*, profiles(id, email)')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(500);
 
     if (error) throw new AppError(error.message, 500, 'INTERNAL');
 

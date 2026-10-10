@@ -59,10 +59,25 @@ export function errorHandler(err: Error | AppError, req: Request, res: Response,
     }
   }
 
+  // express.json() failures (malformed JSON, body too large) carry a 4xx status but are not AppErrors.
+  // Treat them as client errors instead of reporting a server fault.
+  const parserType = (err as unknown as { type?: string }).type;
+  if (!(err instanceof AppError) && (parserType === 'entity.parse.failed' || parserType === 'entity.too.large')) {
+    const tooLarge = parserType === 'entity.too.large';
+    res.status(tooLarge ? 413 : 400).json({
+      error: {
+        code: tooLarge ? 'PAYLOAD_TOO_LARGE' : 'BAD_REQUEST',
+        message: tooLarge ? 'Request body is too large.' : 'The request body is not valid JSON.',
+      },
+    });
+    return;
+  }
+
   const statusCode = err instanceof AppError ? err.statusCode : 500;
   const code = err instanceof AppError ? err.code : 'INTERNAL';
 
-  logger.error(err.message, requestId, 'ErrorHandler', {
+  const logFn = statusCode >= 500 ? logger.error.bind(logger) : logger.warn.bind(logger);
+  logFn(err.message, requestId, 'ErrorHandler', {
     name: err.name,
     code,
     stack: config.env === 'development' ? err.stack : undefined,

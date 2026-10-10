@@ -20,7 +20,7 @@ The **ML service is not part of this repository.** The backend reaches it only t
 | `backend/` | Express API. `src/index.ts` = Node dev server, `src/worker.ts` = Cloudflare Worker adapter (`backend/wrangler.jsonc`) |
 | `backend/tests/unit/` | Offline unit tests (`npm test`) |
 | `backend/tests/integration/` | Scripts that hit a **real** Supabase project (create/delete test users). Run individually, never against production |
-| `supabase/migrations/` | Schema + RLS + credit/subscription functions. Apply in filename order |
+| `database/migrations/` | Schema + RLS + credit/subscription functions. Apply in filename order |
 | `docs/` | Architecture, deployment and security notes |
 | `frontend/docs/API_CONTRACT.md` | HTTP contract the frontend codes against |
 | `.gsd/`, `.agents/`, `AGENTS.md` | AI-assistant project notes/rules (not application code) |
@@ -52,7 +52,7 @@ There is no ESLint configuration and no frontend test runner in this repository 
 
 ## Database
 
-Apply `supabase/migrations/*.sql` in order (Supabase CLI: `supabase db push`, or the SQL editor).
+Apply `database/migrations/*.sql` in filename order (SQL editor, or the Supabase CLI pointed at this folder).
 `20261002000001_security_hardening.sql` must be applied: it closes direct-API privilege escalation
 paths (see `docs/SECURITY.md`).
 

@@ -132,7 +132,11 @@ export async function deleteProjectStorageFiles(originalKey: string, enhancedKey
   const keysToDelete: string[] = [];
   if (originalKey) keysToDelete.push(originalKey);
   if (enhancedKey) keysToDelete.push(enhancedKey);
+  await deleteStorageObjects(keysToDelete);
+}
 
+/** Remove any number of storage objects in a single request. */
+export async function deleteStorageObjects(keysToDelete: string[]): Promise<void> {
   if (keysToDelete.length === 0) return;
 
   try {

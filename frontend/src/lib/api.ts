@@ -3,7 +3,13 @@
 // If the backend uses different paths, change them in ENDPOINTS only.
 // The frontend never enhances images or computes balances itself: the backend is authoritative.
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '');
+const RAW_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.trim().replace(/\/$/, '');
+// An https page cannot call an http:// API (mixed content is blocked). Upgrade public hosts automatically;
+// plain http stays allowed only for localhost development.
+const BASE =
+  RAW_BASE && typeof window !== 'undefined' && window.location.protocol === 'https:' && RAW_BASE.startsWith('http://') && !/^http:\/\/(localhost|127\.0\.0\.1)/.test(RAW_BASE)
+    ? RAW_BASE.replace(/^http:\/\//, 'https://')
+    : RAW_BASE;
 
 /** Dev-only preview (no VITE_API_URL): pages render their `?state=` previews. Never true in a production build. */
 export const PREVIEW = import.meta.env.DEV && !BASE;
@@ -142,12 +148,22 @@ export class ApiError extends Error {
 /** True when the connected server is the dev mock (it sends X-AquaVision-Mock: 1). Drives a visible banner. */
 export let isMock = false;
 
-async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+// A stalled network must not leave the UI waiting forever. Enhancement can legitimately take minutes
+// (model cold start + inference), so it gets a longer budget.
+// AbortSignal.timeout is missing on older browsers (e.g. iOS < 16); without it the request simply has no limit.
+const timeoutSignal = (ms: number): AbortSignal | undefined => (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal ? AbortSignal.timeout(ms) : undefined);
+const DEFAULT_TIMEOUT_MS = 30_000;
+const ENHANCE_TIMEOUT_MS = 240_000;
+
+async function req<T>(path: string, init: RequestInit = {}, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
   if (!BASE) throw new ApiError('Backend not configured. Set VITE_API_URL.', 0, 'NO_BACKEND');
   let res: Response;
   try {
-    res = await fetch(BASE + path, { credentials: 'include', ...init });
-  } catch {
+    res = await fetch(BASE + path, { credentials: 'include', signal: init.signal ?? timeoutSignal(timeoutMs), ...init });
+  } catch (err) {
+    if ((err as Error)?.name === 'TimeoutError') {
+      throw new ApiError('The server took too long to respond. Please try again.', 0, 'TIMEOUT');
+    }
     throw new ApiError('Cannot reach the AquaVision server. Check your connection and try again.', 0, 'NETWORK');
   }
   if (res.headers.get('X-AquaVision-Mock') === '1') isMock = true;
@@ -173,7 +189,13 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new ApiError(message, res.status, code, details);
   }
-  return res.status === 204 ? (undefined as T) : res.json();
+  if (res.status === 204) return undefined as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    // e.g. a proxy/CDN returned an HTML page with status 200
+    throw new ApiError('The server sent an unexpected response. Please try again.', res.status, 'BAD_RESPONSE');
+  }
 }
 
 const send = (method: string, body?: unknown): RequestInit => ({
@@ -230,7 +252,7 @@ export const api = {
   enhance: (file: File) => {
     const fd = new FormData();
     fd.append('image', file);
-    return req<{ project: Project; credits: Credits }>(ENDPOINTS.enhance, { method: 'POST', body: fd }).then((res) => {
+    return req<{ project: Project; credits: Credits }>(ENDPOINTS.enhance, { method: 'POST', body: fd }, ENHANCE_TIMEOUT_MS).then((res) => {
       window.dispatchEvent(new Event('aquavision:projects-changed'));
       return res;
     });
@@ -248,7 +270,7 @@ export const api = {
       return res;
     }),
   deleteProjects: (ids: string[]) =>
-    req<{ deletedIds: string[]; failedIds: string[] }>('/api/v1/projects/bulk-delete', send('POST', { ids })).then((res) => {
+    req<{ deletedIds: string[]; failedIds: string[] }>('/projects/bulk-delete', send('POST', { ids })).then((res) => {
       window.dispatchEvent(new Event('aquavision:projects-changed'));
       return res;
     }),

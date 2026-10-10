@@ -7,9 +7,9 @@ import { useAccount } from '../lib/account';
 type Member = { name: string; role: string; initials: string; tone: Tone; photo?: string; linkedin?: string; links: [label: string, href: string][] };
 
 const TEAM: Member[] = [
-  { name: 'Mohit Bhutada', role: 'Full-Stack Development, DevOps & Cloud, Database Management', initials: 'MB', tone: 'deep', photo: '/team/Mohit.png', linkedin: 'https://www.linkedin.com/in/mohit-bhutada1', links: [['Website', 'https://mohitbhutada.com']] },
-  { name: 'Sumit Jadhav', role: 'Frontend Development, Machine Learning, UI/UX', initials: 'SJ', tone: 'deep', photo: '/team/Sumit.png', linkedin: 'https://www.linkedin.com/in/sumit-jadhav-1703s', links: [['Website', 'https://mac-os-portfolio-self-nine.vercel.app']] },
-  { name: 'Sudhanshu Bhagwat', role: 'Machine Learning, Deep Learning, Image Processing', initials: 'SB', tone: 'deep', photo: '/team/Sudhanshu.png', linkedin: 'https://www.linkedin.com/in/sudhanshu-bhagwat-479424288', links: [] },
+  { name: 'Mohit Bhutada', role: 'Full-Stack Development, DevOps & Cloud, Database Management', initials: 'MB', tone: 'deep', photo: '/team/Mohit.webp', linkedin: 'https://www.linkedin.com/in/mohit-bhutada1', links: [['Website', 'https://mohitbhutada.com']] },
+  { name: 'Sumit Jadhav', role: 'Frontend Development, Machine Learning, UI/UX', initials: 'SJ', tone: 'deep', photo: '/team/Sumit.webp', linkedin: 'https://www.linkedin.com/in/sumit-jadhav-1703s', links: [['Website', 'https://mac-os-portfolio-self-nine.vercel.app']] },
+  { name: 'Sudhanshu Bhagwat', role: 'Machine Learning, Deep Learning, Image Processing', initials: 'SB', tone: 'deep', photo: '/team/Sudhanshu.webp', linkedin: 'https://www.linkedin.com/in/sudhanshu-bhagwat-479424288', links: [] },
 ];
 
 function LinkedInIcon({ size = 16 }: { size?: number }) {

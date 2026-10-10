@@ -54,6 +54,27 @@ try {
 }
 
 
+const MAX_TRACKED_ACCOUNTS = 10_000;
+let lastPrune = 0;
+
+/** Remove stale records on traffic (timers are unavailable in Workers) and cap the map's size. */
+function pruneLockouts(now: number): void {
+  if (now - lastPrune < 60_000 && lockoutStore.size < MAX_TRACKED_ACCOUNTS) return;
+  lastPrune = now;
+  for (const [key, state] of lockoutStore) {
+    if ((state.lockedUntil && now > state.lockedUntil) || (!state.lockedUntil && now - state.lastAttemptAt > 60 * 60 * 1000)) {
+      lockoutStore.delete(key);
+    }
+  }
+  if (lockoutStore.size >= MAX_TRACKED_ACCOUNTS) {
+    let toDrop = lockoutStore.size - MAX_TRACKED_ACCOUNTS + 500;
+    for (const key of lockoutStore.keys()) {
+      if (toDrop-- <= 0) break;
+      lockoutStore.delete(key);
+    }
+  }
+}
+
 export function checkLoginLock(email: string): void {
   if (!email || typeof email !== 'string') return;
   const key = email.trim().toLowerCase();
@@ -84,6 +105,7 @@ export function checkLoginLock(email: string): void {
 export function recordFailedLogin(email: string): AppError {
   const key = email.trim().toLowerCase();
   const now = getCurrentTime();
+  pruneLockouts(now);
   let state = lockoutStore.get(key);
 
   // If lock expired prior to this attempt, reset state

@@ -16,7 +16,6 @@ export function originCheckMiddleware(req: Request, _res: Response, next: NextFu
   if (SAFE_METHODS.has(req.method)) return next();
   const origin = req.headers.origin;
   if (!origin) return next();
-  const allowed = String(config.corsOrigin).split(',').map((o) => o.trim().replace(/\/$/, ''));
-  if (allowed.includes(origin.replace(/\/$/, ''))) return next();
+  if (config.corsOrigins.includes(origin.replace(/\/$/, ''))) return next();
   next(new AppError('Cross-origin request rejected.', 403, 'FORBIDDEN_ORIGIN'));
 }

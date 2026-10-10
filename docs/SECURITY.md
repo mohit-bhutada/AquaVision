@@ -30,3 +30,26 @@
 - `AdminService.adjustUserCredits` (admin-only) is still a read-modify-write; move it into a SQL function if admins can act concurrently.
 - Login lockout and the rate limiter are in-memory per Worker isolate, so they are best-effort. Back them with Cloudflare Rate Limiting rules or a shared store.
 - No ESLint config, no frontend tests, no payment provider integration exist in the repository.
+
+## Second audit (full-stack review)
+
+### Fixed
+| Area | Issue | Fix |
+|---|---|---|
+| OTP | Failed attempts were counted with read-then-write, so parallel guesses all saw "0 attempts" and the 5-attempt limit never tripped (6-digit code could be brute-forced) | Each guess must first win an attempt slot with a compare-and-swap; at most `OTP_MAX_ATTEMPTS` guesses are ever evaluated per code (`otpService.ts`, test `otpRace.test.ts`) |
+| Rate limiting | `trust proxy: true` believed any `X-Forwarded-For`, so every limit could be bypassed with a fake header | Client IP resolved explicitly (`lib/clientIp.ts`); second limit on Cloudflare's own address; bounded memory; errors use the standard JSON envelope |
+| Signup e-mail | Unlimited codes could be triggered for any address (mail bombing, Gmail quota burn) | Per-address cooldown + 10/day cap |
+| Password reset | New password was not checked against any policy | Same policy as signup, plus a 72-character maximum |
+| Login | A Supabase outage / bad key was reported as "wrong password" and consumed lockout attempts | Only genuine credential errors count; outages return 503 `AUTH_UNAVAILABLE` |
+| `/auth/session` | Wrote any string into the login cookies | Accepts only a token Supabase confirms |
+| Input | Non-string JSON fields crashed handlers (500) | Central validators (`lib/validators.ts`) |
+| Google sign-in | Callback URL built from a client-supplied header; PKCE cookie not cleared with matching attributes; no timeout | Host must be one of our own origins; matching cookie attributes; 15 s timeout |
+| Headers/CORS | API responses cacheable; single CORS origin; no preflight cache | `Cache-Control: no-store`, strict CSP, multi-origin CORS, 10-minute preflight cache |
+| Config | Env re-validated on every property access; garbage numbers became `NaN`; production could start without `CORS_ORIGIN` | Cached validation, bounded integers, production requires https `CORS_ORIGIN` |
+| E-mail | Nodemailer cannot run in a Worker | OTP mail goes through `frontend/api/send-email.js` (Vercel) with a timing-safe shared secret, strict input validation and no error leakage |
+
+### Residual risks (not fixable in code alone)
+- Per-IP limits and the login lockout are in memory per Worker instance (best effort). The Worker is reachable directly at its `workers.dev` address, where Vercel's client-IP headers can be forged. Add Cloudflare Rate Limiting rules.
+- A 6-digit OTP guarded by 5 attempts, a lockout and a daily cap is standard, but not unguessable; keep the lockout settings.
+- An attacker can register an unverified account with someone else's address (they cannot log in until the code is verified). Do not enable automatic account linking between e-mail/password and Google in Supabase unless you accept that.
+- Resetting a password does not revoke the user's existing sessions (Supabase offers no admin call for that without a valid session token).

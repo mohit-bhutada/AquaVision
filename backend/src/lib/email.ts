@@ -111,6 +111,38 @@ async function sendViaGmailApi(from: string, to: string, subject: string, html: 
   }
 }
 
+// ---------------------------------------------------------------------------
+// Mail relay (Vercel function running Nodemailer + Gmail SMTP). Workers cannot make SMTP connections,
+// so the Worker sends the finished message over HTTPS to POST {VERCEL_API_URL}/api/send-email,
+// authenticated with the shared secret INTERNAL_API_KEY. Gmail credentials only exist on Vercel.
+// ---------------------------------------------------------------------------
+async function sendViaMailRelay(baseUrl: string, apiKey: string, to: string, subject: string, text: string, html: string): Promise<void> {
+  const isLocal = /^http:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(baseUrl);
+  if (!baseUrl.startsWith('https://') && !isLocal) {
+    throw new Error('VERCEL_API_URL must be an https:// URL (the shared secret is sent with every request).');
+  }
+  if (apiKey.length < 32) {
+    throw new Error('INTERNAL_API_KEY must be at least 32 characters.');
+  }
+  const res = await fetch(`${baseUrl}/api/send-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({ to, subject, text, html }),
+    // never follow a redirect: it would forward the Authorization header to another address
+    redirect: 'manual',
+    signal: AbortSignal.timeout(25_000),
+  });
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(`Mail relay URL redirected (HTTP ${res.status}) to "${res.headers.get('location') || 'unknown'}". Use the final custom-domain URL in VERCEL_API_URL, not the vercel.app one.`);
+  }
+  if (res.headers.get('x-aquavision-relay') !== '1') {
+    throw new Error(`HTTP ${res.status} did not come from the mail function (is /api/send-email being proxied to the Worker instead of served by Vercel?).`);
+  }
+  if (!res.ok) {
+    throw new Error(`Mail relay responded HTTP ${res.status}`);
+  }
+}
+
 export async function sendOtpEmail(options: SendOtpOptions): Promise<void> {
   const { to, otp, purpose } = options;
   const isSignup = purpose === 'SIGNUP';
@@ -163,6 +195,19 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<void> {
 
   const fromAddress = `"${config.smtp.fromName}" <${config.smtp.fromEmail}>`;
 
+  const relayBase = (process.env.VERCEL_API_URL || '').trim().replace(/\/+$/, '');
+  const relayKey = (process.env.INTERNAL_API_KEY || '').trim();
+  if (relayBase && relayKey) {
+    try {
+      await sendViaMailRelay(relayBase, relayKey, to, subject, textContent, htmlContent);
+    } catch (err) {
+      logger.error(`Failed to send OTP email via mail relay to ${to}: ${(err as Error).message}`, undefined, 'EmailService');
+      throw new AppError('Unable to send the verification email. Please try again shortly.', 500, 'EMAIL_SEND_FAILED');
+    }
+    logger.info(`OTP email sent via mail relay to ${to} (${purpose})`, undefined, 'EmailService');
+    return;
+  }
+
   // Preferred path on Cloudflare Workers: Workers cannot open raw SMTP (TCP) connections to most
   // mail servers, so when RESEND_API_KEY is set the mail is sent over HTTPS instead.
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -205,7 +250,7 @@ export async function sendOtpEmail(options: SendOtpOptions): Promise<void> {
   const transporter = createTransporter();
 
   if (!transporter) {
-    logger.error('No email provider configured (set GMAIL_* credentials, RESEND_API_KEY, or SMTP_HOST/SMTP_USER/SMTP_PASS)', undefined, 'EmailService');
+    logger.error('No email provider configured (set VERCEL_API_URL + INTERNAL_API_KEY, GMAIL_* credentials, RESEND_API_KEY, or SMTP_HOST/SMTP_USER/SMTP_PASS)', undefined, 'EmailService');
     throw new AppError('Email service is not configured.', 500, 'EMAIL_CONFIGURATION_ERROR');
   }
 

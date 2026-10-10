@@ -19,6 +19,7 @@
     "SUPABASE_URL": "https://ncjcneqffvamjfvadegu.supabase.co",
     "AQUAVISION_ML_BASE_URL": "https://aquavision-ml-service-cxf5.onrender.com",
     "AQUAVISION_ML_TIMEOUT_SECONDS": "180",
+    "VERCEL_API_URL": "https://aquavision.mohitbhutada.com",
     "OTP_EXPIRY_SECONDS": "600",
     "OTP_MAX_ATTEMPTS": "5",
     "OTP_RESEND_COOLDOWN_SECONDS": "60",

@@ -5,6 +5,7 @@ import { createRateLimiter } from '../middleware/rateLimit.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { config } from '../config/env.js';
 import { getCookieOptions } from '../lib/cookies.js';
+import { requireEmail, requireLoginPassword, requireNewPassword, requireToken, requireOtp, cleanDisplayName } from '../lib/validators.js';
 import { logger } from '../lib/logger.js';
 import { checkLoginLock, recordFailedLogin, recordSuccessfulLogin } from '../middleware/loginLockout.js';
 import {
@@ -58,16 +59,14 @@ async function fetchProfile(userId: string) {
 // POST /auth/signup
 router.post('/signup', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { name, email, password } = req.body || {};
-    if (!email || !password) {
+    const body = req.body || {};
+    if (!body.email || !body.password) {
       throw new AppError('Email and password are required', 400, 'VALIDATION_ERROR');
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-
-    if (password.length < 8 || !/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
-      throw new AppError('Password must be at least 8 characters long and contain both letters and numbers', 400, 'VALIDATION_ERROR');
-    }
+    const normalizedEmail = requireEmail(body.email);
+    const password = requireNewPassword(body.password);
+    const name = cleanDisplayName(body.name);
 
     // Differentiate verified vs unverified duplicate account
     const { data: existingProfile } = await supabaseAdmin
@@ -150,7 +149,7 @@ router.post('/verify-otp', async (req: AuthenticatedRequest, res: Response, next
       throw new AppError('Verification token and code are required', 400, 'VALIDATION_ERROR');
     }
 
-    const result = await verifyOtpCode(verificationToken.trim(), otp.trim());
+    const result = await verifyOtpCode(requireToken(verificationToken), requireOtp(otp));
 
     if (result.purpose === 'SIGNUP') {
       let authUserObj: any = null;
@@ -199,7 +198,7 @@ router.post('/resend-otp', async (req: AuthenticatedRequest, res: Response, next
       throw new AppError('Verification token is required', 400, 'VALIDATION_ERROR');
     }
 
-    const result = await resendOtp(verificationToken.trim());
+    const result = await resendOtp(requireToken(verificationToken));
     res.json({ ok: true, expiresAt: result.expiresAt });
   } catch (err) {
     next(err);
@@ -209,12 +208,13 @@ router.post('/resend-otp', async (req: AuthenticatedRequest, res: Response, next
 // POST /auth/login
 router.post('/login', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { email, password } = req.body || {};
-    if (!email || !password) {
+    const { email, password: rawPassword } = req.body || {};
+    if (!email || !rawPassword) {
       throw new AppError('Email and password are required', 400, 'VALIDATION_ERROR');
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = requireEmail(email);
+    const password = requireLoginPassword(rawPassword);
 
     // Enforce account lockout before password attempt
     checkLoginLock(normalizedEmail);
@@ -249,6 +249,23 @@ router.post('/login', async (req: AuthenticatedRequest, res: Response, next: Nex
         },
       });
       return;
+    }
+
+    if (error) {
+      // Only a genuine "wrong email or password" answer may count against the account. A Supabase outage, a bad
+      // API key or a network failure used to be reported as "Invalid email or password" and burned the user's
+      // attempts, so during any incident real users were told their password was wrong and then locked out.
+      const status = (error as any).status as number | undefined;
+      const authCode = (error as any).code as string | undefined;
+      const message = String(error.message || '').toLowerCase();
+      const wrongCredentials = authCode === 'invalid_credentials' || message.includes('invalid login credentials');
+      if (status === 429 || authCode === 'over_request_rate_limit') {
+        throw new AppError('Too many sign-in attempts. Please wait a moment and try again.', 429, 'RATE_LIMITED');
+      }
+      if (!wrongCredentials) {
+        logger.error(`Sign-in could not be completed (not a credentials problem): [${status ?? '-'}] ${authCode ?? ''} ${error.message}`, req.id, 'AuthRoutes');
+        throw new AppError('Sign-in is temporarily unavailable. Please try again in a moment.', 503, 'AUTH_UNAVAILABLE');
+      }
     }
 
     if (error || !data.user) {
@@ -299,15 +316,27 @@ router.post('/login', async (req: AuthenticatedRequest, res: Response, next: Nex
 });
 
 // POST /auth/session - Backwards compatibility for posting session tokens
-router.post('/session', (req: AuthenticatedRequest, res: Response) => {
-  const { accessToken, refreshToken } = req.body || {};
-  if (accessToken) {
+router.post('/session', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const { accessToken, refreshToken } = req.body || {};
+    const tokenShape = /^[A-Za-z0-9._-]{20,4096}$/;
+    // Previously any string was written straight into the login cookies. Only a token that Supabase accepts
+    // as a real, current session is stored now, and a refresh token is only accepted together with one.
+    if (typeof accessToken !== 'string' || !tokenShape.test(accessToken)) {
+      throw new AppError('A valid session is required', 401, 'UNAUTHENTICATED');
+    }
+    const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
+    if (error || !data?.user) {
+      throw new AppError('A valid session is required', 401, 'UNAUTHENTICATED');
+    }
     res.cookie('sb_access_token', accessToken, getCookieOptions());
+    if (typeof refreshToken === 'string' && tokenShape.test(refreshToken)) {
+      res.cookie('sb_refresh_token', refreshToken, getCookieOptions());
+    }
+    res.json({ status: 'ok', message: 'HTTP-only session established' });
+  } catch (err) {
+    next(err);
   }
-  if (refreshToken) {
-    res.cookie('sb_refresh_token', refreshToken, getCookieOptions());
-  }
-  res.json({ status: 'ok', message: 'HTTP-only session established' });
 });
 
 // POST /auth/logout
@@ -347,11 +376,11 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res: Response, 
 router.post('/forgot-password', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { email } = req.body || {};
-    if (!email || !email.trim()) {
+    if (!email) {
       throw new AppError('Email is required', 400, 'VALIDATION_ERROR');
     }
 
-    const result = await createPasswordResetTransaction(email.trim());
+    const result = await createPasswordResetTransaction(requireEmail(email));
     res.json({
       ok: true,
       message: 'If an account exists for this email address, a verification code has been sent.',
@@ -370,7 +399,7 @@ router.post('/reset-password', async (req: AuthenticatedRequest, res: Response, 
       throw new AppError('Verification token and new password are required', 400, 'VALIDATION_ERROR');
     }
 
-    await resetPasswordWithToken(verificationToken.trim(), password);
+    await resetPasswordWithToken(requireToken(verificationToken), requireNewPassword(password));
     res.json({ ok: true, message: 'Password updated successfully. Please log in with your new password.' });
   } catch (err) {
     next(err);
@@ -388,6 +417,35 @@ export function safeNextPath(next?: string | null): string {
   return '/workspace';
 }
 
+/**
+ * The host the browser used to reach the API, needed to build the OAuth callback URL.
+ * X-Forwarded-Host is client-controllable, so it is honoured only when it names one of OUR frontends
+ * (the Vercel-proxy setup); anything else falls back to the Host header Cloudflare itself provides.
+ */
+function resolveRequestHost(req: AuthenticatedRequest): { host: string; isLocal: boolean } {
+  const direct = req.get('host') || 'localhost:4000';
+  const forwarded = (req.get('x-forwarded-host') || '').split(',')[0].trim();
+  const ownHosts = config.corsOrigins.map((o) => {
+    try {
+      return new URL(o).host;
+    } catch {
+      return '';
+    }
+  });
+  const host = forwarded && ownHosts.includes(forwarded) ? forwarded : direct;
+  return { host, isLocal: /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(host) };
+}
+
+function pkceCookieOptions(isLocal: boolean) {
+  const crossSite = config.env === 'production' || !isLocal;
+  return {
+    httpOnly: true,
+    secure: crossSite,
+    sameSite: (crossSite ? 'none' : 'lax') as 'none' | 'lax',
+    path: '/',
+  };
+}
+
 function generateCodeVerifier(): string {
   return crypto.randomBytes(32).toString('base64url');
 }
@@ -400,23 +458,15 @@ function generateCodeChallenge(verifier: string): string {
 router.get('/google', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const nextPath = safeNextPath(req.query.next as string);
-    const hostHeader = (req.get('x-forwarded-host') || req.get('host') || 'localhost:4000').split(',')[0].trim();
-    const isLocal = hostHeader.includes('localhost') || hostHeader.includes('127.0.0.1');
-    const forwardedProto = req.get('x-forwarded-proto');
-    const protocol = isLocal ? 'http' : (typeof forwardedProto === 'string' ? forwardedProto.split(',')[0].trim() : 'https');
+    const { host: hostHeader, isLocal } = resolveRequestHost(req);
+    const protocol = isLocal ? 'http' : 'https';
 
     // 1. Generate PKCE verifier and challenge
     const codeVerifier = generateCodeVerifier();
     const codeChallenge = generateCodeChallenge(codeVerifier);
 
     // 2. Save PKCE verifier in HTTP-only cookie
-    res.cookie('sb_code_verifier', codeVerifier, {
-      httpOnly: true,
-      secure: config.env === 'production' || !isLocal,
-      sameSite: (config.env === 'production' || !isLocal ? 'none' : 'lax') as 'none' | 'lax',
-      path: '/',
-      maxAge: 10 * 60 * 1000, // 10 minutes
-    });
+    res.cookie('sb_code_verifier', codeVerifier, { ...pkceCookieOptions(isLocal), maxAge: 10 * 60 * 1000 }); // 10 minutes
 
     // 3. Construct backend callback URL that Supabase will redirect to after Google auth
     const callbackUrl = `${protocol}://${hostHeader}/api/v1/auth/callback?next=${encodeURIComponent(nextPath)}`;
@@ -451,19 +501,21 @@ router.get('/google', async (req: AuthenticatedRequest, res: Response, next: Nex
 router.get('/callback', async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const nextPath = safeNextPath(req.query.next as string);
-    const host = req.get('host') || 'localhost:4000';
-    const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
-    const frontendOrigin = isLocal ? (req.headers.origin || 'http://localhost:5173') : config.corsOrigin;
+    const { isLocal } = resolveRequestHost(req);
+    const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin.replace(/\/+$/, '') : '';
+    // Where to send the browser afterwards: always one of the configured frontends, never a request-supplied value.
+    const frontendOrigin = isLocal && config.corsOrigins.includes(requestOrigin) ? requestOrigin : config.corsOrigin;
 
     // Extract PKCE verifier from cookie and clear cookie
     const codeVerifier = req.cookies?.sb_code_verifier as string | undefined;
-    res.clearCookie('sb_code_verifier', { path: '/' });
+    res.clearCookie('sb_code_verifier', pkceCookieOptions(isLocal)); // same attributes it was set with, or browsers keep it
 
     // Check for error parameters from OAuth provider or Supabase
     const oauthError = req.query.error || req.query.error_description;
     if (oauthError) {
-      logger.warn(`Google OAuth error reported in callback: ${oauthError}`, req.id, 'AuthRoutes');
-      const errorMsg = encodeURIComponent(String(oauthError));
+      const shownError = String(oauthError).slice(0, 200);
+      logger.warn(`Google OAuth error reported in callback: ${shownError}`, req.id, 'AuthRoutes');
+      const errorMsg = encodeURIComponent(shownError);
       return res.redirect(`${frontendOrigin}/login?error=${errorMsg}`);
     }
 
@@ -486,9 +538,10 @@ router.get('/callback', async (req: AuthenticatedRequest, res: Response, next: N
         auth_code: code,
         code_verifier: codeVerifier,
       }),
+      signal: AbortSignal.timeout(15_000), // never leave the sign-in page hanging on a stalled upstream
     });
 
-    const tokenData = await tokenRes.json() as any;
+    const tokenData = (await tokenRes.json().catch(() => ({}))) as any;
 
     if (!tokenRes.ok || !tokenData?.access_token || !tokenData?.user) {
       const errDetail = tokenData?.msg || tokenData?.error_description || 'Invalid PKCE authorization code or verifier';

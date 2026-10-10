@@ -54,10 +54,43 @@ async function checkActiveOtpLockout(email: string) {
   }
 }
 
+// Each signup transaction sends an e-mail. Without a limit, anyone could call /auth/signup in a loop with a
+// victim's address and bury them in codes (and burn the sender's daily mail quota).
+const MAX_SIGNUP_EMAILS_PER_DAY = 10;
+
+async function enforceSignupEmailThrottle(normalizedEmail: string, now: Date): Promise<void> {
+  const cooldown = config.otp.resendCooldownSeconds;
+  const since = new Date(now.getTime() - cooldown * 1000).toISOString();
+  const { count: recent } = await supabaseAdmin
+    .from('auth_otp_verifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('email', normalizedEmail)
+    .eq('purpose', 'SIGNUP')
+    .gt('last_sent_at', since);
+  if ((recent ?? 0) > 0) {
+    throw new AppError(
+      `A verification code was just sent to this address. Please wait about ${cooldown} seconds before requesting another.`,
+      429,
+      'RATE_LIMITED',
+      { retryAfterSeconds: cooldown }
+    );
+  }
+  const { count: today } = await supabaseAdmin
+    .from('auth_otp_verifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('email', normalizedEmail)
+    .eq('purpose', 'SIGNUP')
+    .eq('requested_ist_date', getTodayIstDateString(now));
+  if ((today ?? 0) >= MAX_SIGNUP_EMAILS_PER_DAY) {
+    throw new AppError('Too many verification emails were requested for this address today. Please try again tomorrow.', 429, 'RATE_LIMITED');
+  }
+}
+
 export async function createSignupTransaction(email: string, userId?: string) {
   const normalizedEmail = email.trim().toLowerCase();
 
   await checkActiveOtpLockout(normalizedEmail);
+  await enforceSignupEmailThrottle(normalizedEmail, new Date());
 
   const rawToken = generateVerificationToken();
   const tokenHash = hashVerificationToken(rawToken);
@@ -241,39 +274,69 @@ export async function verifyOtpCode(rawToken: string, userOtp: string) {
   }
 
   const now = new Date();
+
+  // RESERVE an attempt slot BEFORE looking at the code.
+  // The old flow compared first and then wrote `attempts = attempts + 1` from a value it had read earlier. Many
+  // guesses sent in parallel all read the same number and all wrote the same "+1", so the 5-attempt limit
+  // never tripped and the 6-digit code could be brute-forced. Here every guess must first win a slot with a
+  // compare-and-swap on the stored counter, so at most `max_otp_attempts` guesses are ever evaluated per code,
+  // however many requests arrive at once.
+  const maxAttempts = tx.max_otp_attempts;
+  let current = tx.otp_attempts;
+  let attemptNumber = 0;
+  for (let tries = 0; tries < 8 && !attemptNumber; tries++) {
+    if (current >= maxAttempts) break;
+    const { data: slot } = await supabaseAdmin
+      .from('auth_otp_verifications')
+      .update({ otp_attempts: current + 1, updated_at: now.toISOString() })
+      .eq('id', tx.id)
+      .eq('status', 'PENDING')
+      .eq('otp_attempts', current)
+      .select('otp_attempts');
+    if (slot && slot.length === 1) {
+      attemptNumber = current + 1;
+      break;
+    }
+    // Another request took that slot (or the session changed): re-read the counter and try the next one.
+    const { data: fresh } = await supabaseAdmin
+      .from('auth_otp_verifications')
+      .select('otp_attempts, status')
+      .eq('id', tx.id)
+      .single();
+    if (!fresh || fresh.status !== 'PENDING') {
+      throw new AppError(fresh?.status === 'LOCKED' ? 'Too many failed verification attempts. Your session is locked for 1 hour.' : 'Invalid or expired verification session.', fresh?.status === 'LOCKED' ? 423 : 400, fresh?.status === 'LOCKED' ? 'OTP_LOCKED' : 'OTP_INVALID');
+    }
+    current = fresh.otp_attempts;
+  }
+
+  if (!attemptNumber) {
+    if (current >= maxAttempts) {
+      // Every slot is used: make sure the session is locked.
+      const lockoutUntil = new Date(now.getTime() + config.otp.lockoutSeconds * 1000).toISOString();
+      await supabaseAdmin
+        .from('auth_otp_verifications')
+        .update({ status: 'LOCKED', locked_until: lockoutUntil, updated_at: now.toISOString() })
+        .eq('id', tx.id)
+        .eq('status', 'PENDING');
+      throw new AppError('Too many failed verification attempts. Your session is locked for 1 hour.', 423, 'OTP_LOCKED');
+    }
+    throw new AppError('Too many verification requests at once. Please try again in a moment.', 429, 'RATE_LIMITED');
+  }
+
   const isMatch = verifyOtpHash(userOtp, tx.otp_salt, tx.otp_hash);
 
   if (!isMatch) {
-    const newAttempts = tx.otp_attempts + 1;
-    const isNowLocked = newAttempts >= tx.max_otp_attempts;
-
-    if (isNowLocked) {
-      // 5th failed OTP attempt -> ATOMIC LOCKOUT (1 HOUR)
+    if (attemptNumber >= maxAttempts) {
+      // That was the last allowed attempt -> ATOMIC LOCKOUT (1 HOUR)
       const lockoutUntil = new Date(now.getTime() + config.otp.lockoutSeconds * 1000).toISOString();
-      const { data: lockedRecord } = await supabaseAdmin
+      await supabaseAdmin
         .from('auth_otp_verifications')
-        .update({
-          otp_attempts: newAttempts,
-          status: 'LOCKED',
-          locked_until: lockoutUntil,
-          updated_at: now.toISOString(),
-        })
+        .update({ status: 'LOCKED', locked_until: lockoutUntil, updated_at: now.toISOString() })
         .eq('id', tx.id)
-        .eq('status', 'PENDING')
-        .select()
-        .single();
+        .eq('status', 'PENDING');
 
       throw new AppError('Too many failed verification attempts. Your session is locked for 1 hour.', 423, 'OTP_LOCKED');
     }
-
-    await supabaseAdmin
-      .from('auth_otp_verifications')
-      .update({
-        otp_attempts: newAttempts,
-        status: 'PENDING',
-        updated_at: now.toISOString(),
-      })
-      .eq('id', tx.id);
 
     throw new AppError('Invalid verification code.', 400, 'OTP_INVALID');
   }
