@@ -281,7 +281,7 @@ export default function Workspace() {
                     <div className={state === 'processing' ? 'h-full w-full opacity-40' : 'h-full w-full'}>{preview}</div>
                     {state === 'processing' && (
                       <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
-                        <div className="absolute inset-y-0 w-1/3" style={{ background: 'linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent), transparent)', animation: 'sweep 2.2s cubic-bezier(.6,0,.3,1) infinite' }} />
+                        <div className="absolute inset-y-0 left-0 w-1/3" style={{ background: 'linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent), transparent)', animation: 'scan-across 2.2s cubic-bezier(.6,0,.3,1) infinite' }} />
                       </div>
                     )}
                   </div>

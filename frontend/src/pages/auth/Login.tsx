@@ -31,6 +31,13 @@ export default function Login() {
 
   return (
     <AuthLayout title={['Welcome back', <span className="serif">to the deep.</span>]}>
+      <p className="mb-8 text-sm text-large" role="note">
+        AquaVision AI is currently running on a demo database. To get access and use the app, please email{' '}
+        <a href="mailto:contact@mohitbhutada.com" className="ulink is-on text-head">
+          contact@mohitbhutada.com
+        </a>
+        .
+      </p>
       {params.get('next') && (
         <p className="mb-8 text-sm text-large" role="status">
           Continue to the page you were trying to access.
